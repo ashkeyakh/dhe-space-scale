@@ -1,0 +1,6 @@
+pyshp==3.1.6
+shapely==2.2.0
+pyproj==3.8.0
+plotly==7.1.0
+triangle==20250106
+py_straight_skeleton==0.1.0

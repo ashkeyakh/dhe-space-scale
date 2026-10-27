@@ -1,0 +1,41 @@
+const {chromium}=require('playwright');
+const {pathToFileURL}=require('node:url');
+const path=require('node:path');
+const assert=require('node:assert/strict');
+(async()=>{
+  const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-swiftshader']});
+  try{
+    const page=await browser.newPage({viewport:{width:1500,height:1050}}),errors=[];
+    page.on('pageerror',e=>errors.push(e.message));
+    await page.goto(pathToFileURL(path.resolve('output/simplification_2001.html')).href);
+    await page.evaluate(()=>window.dheReady);
+    assert.equal(await page.locator('#generalizationPanel').isVisible(),true);
+    const roofCounts=()=>page.evaluate(()=>dheViewer.model.faces.filter(f=>f.cell&&f.kind==='roof').map(f=>f.rings[0].length));
+    assert.deepEqual(await roofCounts(),[23,8]);
+    const max=Number(await page.locator('#generalizationProgress').getAttribute('max'));
+    await page.evaluate(()=>dheViewer.setProgress(220));
+    const before=await page.evaluate(()=>dheViewer.model.dual_vertices.slice(1).map(c=>c.area_m2));
+    await page.evaluate(()=>dheViewer.setProgress(230));
+    const middle=await page.evaluate(()=>dheViewer.model.dual_vertices.slice(1).map(c=>c.area_m2));
+    assert.ok(Math.abs(middle[1]-before[1])>0.01,'adjacent feature 2002 follows the moving shared column');
+    assert.ok(Math.abs(middle.reduce((a,b)=>a+b,0)-before.reduce((a,b)=>a+b,0))<1e-5,'shared-boundary area transfer conserves union');
+    await page.locator('#sliceEnabled').check();await page.evaluate(()=>dheViewer.idle());
+    const residual=await page.evaluate(()=>Math.abs(dheViewer.section.area-dheViewer.model.dual_vertices.slice(1).reduce((s,c)=>s+c.area_m2,0)));
+    assert.ok(residual<1e-5,'slicing follows the deformed model');
+    await page.locator('#connectDual').click();await page.evaluate(()=>dheViewer.idle());
+    await page.evaluate(()=>document.querySelector('aside').scrollTop=0);
+    await page.screenshot({path:'output/simplification-transition.png'});
+    await page.evaluate(max=>dheViewer.setProgress(max),max);
+    assert.deepEqual(await roofCounts(),[11,7]);
+    await page.locator('[data-action=f]').click();await page.evaluate(()=>dheViewer.idle());
+    await page.locator('[data-action=a]').click();await page.evaluate(()=>dheViewer.idle());
+    await page.evaluate(()=>dheViewer.setProgress(0));
+    await page.locator('#nextGeneralization').click();await page.evaluate(()=>dheViewer.idle());
+    assert.equal(await page.locator('#generalizationProgress').inputValue(),'20');
+    await page.locator('#playGeneralization').click();
+    await page.waitForFunction(()=>Number(document.getElementById('generalizationProgress').value)>22);
+    await page.locator('#playGeneralization').click();
+    assert.deepEqual(errors,[]);
+    console.log('PASS: polygon-cap preservation; simplification slider/play; neighbour propagation; coverage conservation; slicing and DHE navigation after commits.');
+  }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exit(1);});
